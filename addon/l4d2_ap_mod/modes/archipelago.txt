@@ -1,0 +1,10 @@
+"archipelago"
+{
+    "base" "coop"
+    "maxplayers" "4"
+    "DisplayTitle" "Archipelago"
+    "Description" "Randomized chaos awaits!"
+    "Image" "maps/any"
+    "Author" "Yufii, NaotoADB, DaftValec"
+    "Script" "ap_main" // This loads your VScript
+}

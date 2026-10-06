@@ -1,0 +1,9 @@
+"AddonInfo"
+{
+    "addonSteamAppID" "550" // The app ID for Left 4 Dead 2
+    "addontitle" "Archipelago Mod"
+    "addonversion" "1.0"
+    "addontagline" "Multiworld for Left 4 Dead 2"
+    "addonauthor" "ADBsArt, DaftValac, YufiiEvershade"
+    "addonContent_Script" "1" // This is important for enabling VScript
+}

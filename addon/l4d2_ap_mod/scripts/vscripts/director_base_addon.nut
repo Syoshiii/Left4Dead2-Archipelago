@@ -1,0 +1,1 @@
+IncludeScript( "m60toggle", getroottable() )
