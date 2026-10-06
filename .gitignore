@@ -1,0 +1,21 @@
+# Sources SourcePawn : repo privé Left4Dead2-Archipelago-Dev cloné ici, jamais publié
+sourcemod/
+*.sp
+
+# Python
+__pycache__/
+*.pyc
+
+# Builds
+build/
+dist/
+*.apworld
+*.vpk
+*.smx
+*.exe
+
+# Fichiers générés à l'exécution par le client
+theme_config.json
+goal_completed_*.txt
+location_check.txt
+mod_data/
