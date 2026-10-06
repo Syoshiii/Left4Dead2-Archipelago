@@ -1,31 +1,39 @@
 # Left 4 Dead 2 – Archipelago
 
-Intégration [Archipelago](https://archipelago.gg) pour Left 4 Dead 2 (monde non officiel).
+An [Archipelago](https://archipelago.gg) integration for Left 4 Dead 2 (unofficial world).
 
-Ce projet reprend le travail de **YufiiEvershade** ([dépôt d'origine](https://github.com/yufiievershade/Left-4-Dead-2-Archipelago)).
-L'objectif est d'avoir une version stable et maintenue. Le système de traps est volontairement retiré pour l'instant.
+This project continues the work of **YufiiEvershade** ([original repository](https://github.com/yufiievershade/Left-4-Dead-2-Archipelago)). The goal is a stable, maintained version of the world. Traps are intentionally removed for now.
 
-## Contenu du dépôt
+## Thanks
 
-| Dossier | Rôle |
+A huge thank you to **Yufii**, who created this world, the client and the plugins, and generously gave their blessing, advice and access to the original sources so the project could live on. None of this would exist without Yufii's work.
+
+## Status
+
+Early alpha, in progress. The first milestone is a minimal, stable version: locked campaigns, one check per safe room, melee-only start, no traps. Targets Archipelago 0.6.7.
+
+## Repository contents
+
+| Folder | Purpose |
 |---|---|
-| `apworld/L4D2/` | Le monde Archipelago : items, locations, options, logique |
-| `client/` | Client compagnon qui fait le lien entre le serveur AP et le jeu |
-| `sourcemod/scripting/` | Sources des plugins SourceMod, qui tournent dans le jeu |
-| `addon/l4d2_ap_mod/` | Contenu de l'addon `.vpk` : mutation « Archipelago », scripts, missions |
-| `tools/` | Scripts de build (`.apworld`, `.vpk`) |
+| `apworld/L4D2/` | The Archipelago world: items, locations, options, logic |
+| `client/` | Companion client bridging the AP server and the game |
+| `addon/l4d2_ap_mod/` | Content of the `.vpk` addon: "Archipelago" mutation, scripts, missions |
+| `tools/` | Build scripts (`.apworld`, `.vpk`) |
 
-## Fonctionnement
+The SourceMod plugins run in game. Their sources are not published in this repository: the compiled `.smx` files are provided with each [release](../../releases).
+
+## How it works
 
 ```
-Serveur AP  <--websocket-->  client/ap_companion.py  <--fichiers-->  plugins SourceMod (jeu)
+AP server  <--websocket-->  client/ap_companion.py  <--files-->  SourceMod plugins (game)
 ```
 
-Le client et les plugins échangent par des fichiers dans `left4dead2/addons/sourcemod/data/` :
+The client and the plugins communicate through files in `left4dead2/addons/sourcemod/data/`:
 
-- `archipelago_status.json` (client → jeu) : campagnes et items débloqués
-- `archipelago/mod_data/location_check.txt` (jeu → client) : ID d'une location validée
-- `archipelago/mod_data/starting_items.txt` (client → jeu) : équipement de départ
+- `archipelago_status.json` (client → game): unlocked campaigns and items
+- `archipelago/mod_data/location_check.txt` (game → client): ID of a completed location
+- `archipelago/mod_data/starting_items.txt` (client → game): starting equipment
 
 ## Build
 
@@ -37,18 +45,20 @@ pip install -r client/requirements.txt pyinstaller
 pyinstaller client/ap_companion.spec   # -> dist/ap_companion.exe
 ```
 
-Plugins : compiler chaque `.sp` avec `spcomp` (fourni avec SourceMod, dossier `addons/sourcemod/scripting/`).
+## Installation (game)
 
-## Installation (jeu)
+1. Install [Metamod:Source](https://www.sourcemm.net/downloads.php?branch=stable) and [SourceMod](https://www.sourcemod.net/downloads.php?branch=stable).
+2. Copy the `.smx` files from the release into `left4dead2/addons/sourcemod/plugins/`.
+3. Copy `l4d2_ap_mod.vpk` into `left4dead2/addons/`.
+4. Copy `L4D2.apworld` into Archipelago's `custom_worlds` folder.
+5. Launch the game with `-insecure`, pick the **Archipelago** mutation, then start the client.
 
-1. Installer [Metamod:Source](https://www.sourcemm.net/downloads.php?branch=stable) et [SourceMod](https://www.sourcemod.net/downloads.php?branch=stable).
-2. Copier les `.smx` dans `left4dead2/addons/sourcemod/plugins/`.
-3. Copier `l4d2_ap_mod.vpk` dans `left4dead2/addons/`.
-4. Copier `L4D2.apworld` dans le dossier `custom_worlds` d'Archipelago.
-5. Lancer le jeu en mode `-insecure`, choisir la mutation **Archipelago**, puis lancer le client.
+## Contributing
 
-## Crédits
+Contributions are welcome. All changes go through pull requests: fork the repository, work on a branch, and open a PR against `main`. Direct pushes to `main` are not allowed. If you would like to get more involved, feel free to ask.
 
-- YufiiEvershade : auteur original du monde, du client et des plugins
-- NaotoADB (ADBsArt), DaftValac : co-auteurs de l'addon
-- Nep : template APSkeleton ayant servi de base au monde (voir `LICENSE`)
+## Credits
+
+- YufiiEvershade: original author of the world, the client and the plugins
+- NaotoADB (ADBsArt), DaftValac: co-authors of the addon
+- Nep: APSkeleton template used as the base of the world (see `LICENSE`)
