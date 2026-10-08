@@ -6,7 +6,6 @@ import os
 import sys
 import traceback
 import time
-import random
 import threading
 import winreg
 import tkinter as tk
@@ -17,7 +16,7 @@ stop_event = threading.Event()
 gui_instance = None
 
 def get_resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
+    # Get absolute path to resource, works for dev and for PyInstaller
     try:
         base_path = sys._MEIPASS
     except Exception:
@@ -25,7 +24,7 @@ def get_resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 def find_all_l4d2_paths():
-    """Find all L4D2 installation paths"""
+    # Find all L4D2 installation paths
     found_paths = []
     
     try:
@@ -80,6 +79,7 @@ class L4D2CompanionGUI(tk.Tk):
         self.style = ttk.Style()
         self.style.theme_use('clam')
         self.title("L4D2 AP Companion Client")
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.geometry("800x700")
         main_frame = ttk.Frame(self, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
@@ -231,9 +231,15 @@ class L4D2CompanionGUI(tk.Tk):
             loop.run_until_complete(connect_to_archipelago(host, slot, password))
             self.after(0, self._on_connect_success)
         except Exception as e:
-            self.after(0, lambda: self._on_connect_fail(str(e)))
+            self.after(0, lambda msg=str(e): self._on_connect_fail(msg))
         finally:
             loop.close()
+
+    def _on_close(self):
+        # Closing the window: mark the client as disconnected for the plugins, then quit
+        stop_event.set()
+        mark_status_disconnected()
+        self.destroy()
 
     def disconnect(self):
         stop_event.set()
@@ -275,7 +281,7 @@ class L4D2CompanionGUI(tk.Tk):
         self.log_text.config(state=tk.DISABLED)
     
     def update_campaigns_display(self):
-        """Update the campaigns tab with unlock status"""
+        # Update the campaigns tab with unlock status
         self.campaigns_text.config(state=tk.NORMAL)
         self.campaigns_text.delete(1.0, tk.END)
         
@@ -333,7 +339,7 @@ ALL_EXPLOSIVES = ["Gas Can", "Oxygen Tank", "Propane Tank", "Fireworks"]
 ALL_MISC = ["P220 Pistol", "Glock", "Magnum", "Gnome Chompski", "Gutted Medkit", "Empty Gas Can", "Expired Pills", "Dud Pipe Bomb", "Bent Laser Sight", "Punctured Oxygen Tank"]
 
 def get_seed_based_starter_items(seed):
-    """Get minimal starting items: just pistol"""
+    # Get minimal starting items: just pistol
     log("Using minimal starting inventory", "info")
     
     # Minimal starting inventory
@@ -371,6 +377,25 @@ completed_campaigns = set()  # Track unique campaigns with a completed finale
 
 # Goal completion persistence (will be set per seed)
 GOAL_COMPLETED_FILE = None
+
+# Seed of the connected multiworld. Written to archipelago_status.json so the
+# plugin can tag every check with it; checks from another seed are never sent.
+CURRENT_SEED = None
+
+# Number of items already processed from the server (ReceivedItems "index").
+# The server resends the whole list (index 0) after Connect and after each Sync:
+# items below this count are skipped so they are not logged twice.
+received_items_count = 0
+
+# Locations already validated on the server (plus the ones this client just sent).
+# Written to archipelago_status.json: the plugin uses it for the chapter lock.
+CHECKED_LOCATIONS = set()
+
+# Weapon mode of the seed ("all_weapons" or "melee_only"), written to archipelago_status.json
+WEAPON_MODE = "all_weapons"
+
+# Melee-only: melee weapon that replaces the starting pistol (from slot_data, random per seed)
+STARTING_MELEE = None
 
 # Item ID to name mapping
 ITEM_ID_TO_NAME = {
@@ -459,10 +484,12 @@ ITEM_ID_TO_NAME = {
 }
 
 def update_status(player_name, connected=True):
-    """Write current item status to ALL L4D2 SourceMod data folders"""
+    # Write current item status to ALL L4D2 SourceMod data folders
     status = {
         "connected": connected,
         "player_name": player_name,
+        "seed": CURRENT_SEED,
+        "weapon_mode": WEAPON_MODE,
         "unlocked_campaigns": unlocked_campaigns,
         "locked_campaigns": [c for c in ALL_CAMPAIGNS if c not in unlocked_campaigns],
         "unlocked_healing": unlocked_healing,
@@ -483,10 +510,9 @@ def update_status(player_name, connected=True):
         "locked_explosives": [e for e in ALL_EXPLOSIVES if e not in unlocked_explosives],
         "unlocked_misc": unlocked_misc,
         "locked_misc": [m for m in ALL_MISC if m not in unlocked_misc],
+        "checked_locations": sorted(CHECKED_LOCATIONS),
         "last_updated": int(time.time())
     }
-
-    total_unlocked = len(unlocked_campaigns) + len(unlocked_healing) + len(unlocked_weapon_upgrades) + len(unlocked_t1_weapons) + len(unlocked_t2_weapons) + len(unlocked_heavy_weapons) + len(unlocked_grenades) + len(unlocked_melee) + len(unlocked_explosives) + len(unlocked_misc)
 
     # Write to ALL L4D2 installations
     for l4d2_path in L4D2_PATHS:
@@ -498,8 +524,28 @@ def update_status(player_name, connected=True):
         except Exception as e:
             log(f"Failed to write status file: {e}", "error")
 
+def mark_status_disconnected():
+    """Set "connected": false in the existing status files, keeping everything else.
+
+    The unlocked campaigns and items stay as they are, so the game can still be
+    played offline (the checks are queued and sent at the next connection).
+    """
+    for l4d2_path in L4D2_PATHS:
+        status_file = os.path.join(l4d2_path, "left4dead2", "addons", "sourcemod", "data", "archipelago_status.json")
+        try:
+            with open(status_file, 'r') as f:
+                status = json.load(f)
+        except (OSError, ValueError):
+            continue  # No status yet: nothing to update
+        status["connected"] = False
+        try:
+            with open(status_file, 'w') as f:
+                json.dump(status, f, indent=2)
+        except OSError as e:
+            log(f"Failed to write status file: {e}", "error")
+
 async def send_packet(websocket, packet):
-    """Send packets (dict or list of dicts)."""
+    # Send packets (dict or list of dicts).
     if isinstance(packet, list):
         await websocket.send(json.dumps(packet))
     elif isinstance(packet, dict) and "cmd" in packet:
@@ -508,18 +554,8 @@ async def send_packet(websocket, packet):
         log(f"Invalid packet: {packet}", "error")
         return
 
-async def send_location_check(websocket, location_id):
-    """Send location check to server"""
-    packet = [{"cmd": "LocationChecks", "locations": [location_id]}]
-    await send_packet(websocket, packet)
-    location_name = get_location_name_from_id(location_id)
-    if location_name:
-        log(f"Checked: {location_name}", "info")
-    else:
-        log(f"Checked location ID: {location_id}", "info")
-
 def write_item_spawn_command(item_name):
-    """Write item spawn command to ALL L4D2 installations"""
+    # Write item spawn command to ALL L4D2 installations
     for l4d2_path in L4D2_PATHS:
         mod_data_path = os.path.join(l4d2_path, "left4dead2", "addons", "sourcemod", "data", "archipelago", "mod_data")
         spawn_file = os.path.join(mod_data_path, "item_spawn.txt")
@@ -606,7 +642,7 @@ location_table = {
 }
 
 def get_location_name_from_id(location_id):
-    """Get location name from location ID"""
+    # Get location name from location ID
     # Reverse lookup from location_table
     for name, loc_id in location_table.items():
         if loc_id == location_id:
@@ -614,7 +650,7 @@ def get_location_name_from_id(location_id):
     return None
 
 def parse_printjson_message(msg):
-    """Parse a PrintJSON message and return (log_message, tag) or None to suppress."""
+    # Parse a PrintJSON message and return (log_message, tag) or None to suppress.
     if not isinstance(msg, dict):
         return None
     
@@ -658,7 +694,7 @@ def parse_printjson_message(msg):
     return f"Info: {msg}", "info"
 
 def extract_campaign_from_location_name(location_name):
-    """Extract campaign name from a location name like 'Dead Center - Atrium Finale(Ellis)'."""
+    # Extract campaign name from a location name like 'Dead Center - Atrium Finale(Ellis)'.
     if not location_name or " - " not in location_name:
         return None
     prefix = location_name.split(" - ", 1)[0]
@@ -679,8 +715,8 @@ def extract_campaign_from_location_name(location_name):
     return None
 
 async def check_goal_completion(websocket, player_name):
-    """Check if goal has been completed and send remaining location checks if so"""
-    global goal_completed, completed_campaigns
+    # Check if goal has been completed and send remaining location checks if so
+    global goal_completed
 
     if goal_completed:
         return  # Already completed
@@ -730,8 +766,9 @@ async def check_goal_completion(websocket, player_name):
         log("All remaining checks sent", "info")
 
 def write_starting_items():
-    """Write starting items file to ALL L4D2 installations"""
-    all_starting = unlocked_healing + unlocked_weapon_upgrades + unlocked_t1_weapons + unlocked_t2_weapons + unlocked_heavy_weapons + unlocked_grenades + unlocked_melee + unlocked_explosives + unlocked_misc
+    # Write starting items file to ALL L4D2 installations
+    # The starting melee comes first: the plugin uses it to replace the pistol
+    all_starting = ([STARTING_MELEE] if STARTING_MELEE else []) + unlocked_healing + unlocked_weapon_upgrades + unlocked_t1_weapons + unlocked_t2_weapons + unlocked_heavy_weapons + unlocked_grenades + unlocked_melee + unlocked_explosives + unlocked_misc
 
     for l4d2_path in L4D2_PATHS:
         mod_data_path = os.path.join(l4d2_path, "left4dead2", "addons", "sourcemod", "data", "archipelago", "mod_data")
@@ -748,15 +785,25 @@ def write_starting_items():
             log(f"Failed to write starting items: {e}", "error")
 
 async def handle_server_message(message, player_name, websocket):
-    """Handle messages from Archipelago server"""
+    # Handle messages from Archipelago server
     global unlocked_campaigns, unlocked_healing, unlocked_weapon_upgrades, unlocked_t1_weapons, unlocked_t2_weapons, unlocked_heavy_weapons, unlocked_grenades, unlocked_melee, unlocked_explosives, unlocked_misc
     
+    global received_items_count
     cmd = message.get("cmd")
     
     if cmd == "ReceivedItems":
         items = message.get("items", [])
-        
-        for item in items:
+        index = message.get("index", 0)
+
+        if index > received_items_count:
+            # Some items were missed: ask the server for the full list again
+            return [{"cmd": "Sync"}]
+
+        # Skip the items already processed (full resend after Connect / Sync)
+        new_items = items[received_items_count - index:]
+        received_items_count = max(received_items_count, index + len(items))
+
+        for item in new_items:
             # Extract item ID
             item_id = None
             if isinstance(item, dict):
@@ -834,6 +881,16 @@ async def handle_server_message(message, player_name, websocket):
         # Get the actual multiworld seed from slot_data
         slot_data = message.get("slot_data", {})
         seed = slot_data.get("Seed")
+        global CURRENT_SEED
+        CURRENT_SEED = str(seed) if seed else None
+        global CHECKED_LOCATIONS
+        CHECKED_LOCATIONS = set(message.get("checked_locations", []) or [])
+        global STARTING_MELEE, WEAPON_MODE
+        WEAPON_MODE = slot_data.get("options", {}).get("WeaponMode", "all_weapons")
+        STARTING_MELEE = slot_data.get("StartingMelee") if WEAPON_MODE == "melee_only" else None
+        log(f"Weapon mode: {WEAPON_MODE}", "info")
+        if STARTING_MELEE:
+            log(f"Starting melee: {STARTING_MELEE}", "info")
 
         if seed:
             log(f"Connected to seed: {seed}", "info")
@@ -852,7 +909,7 @@ async def handle_server_message(message, player_name, websocket):
             start_campaign_option = options.get("StartWithCampaign", 1)  # Default to Dead Center
 
         # Get goal from slot_data options
-        global goal_campaigns, goal_completed, completed_campaigns
+        global goal_campaigns, goal_completed
         raw_goal = options.get("goal")
         if raw_goal is None:
             raw_goal = options.get("L4D2Goal", 1)  # Default to 1 campaign
@@ -862,6 +919,7 @@ async def handle_server_message(message, player_name, websocket):
             goal_campaigns = 1
         goal_completed = False
         completed_campaigns.clear()
+        received_items_count = 0  # The server sends the full item list after Connected
 
         # Restore goal completion from persistence file if it exists
         if GOAL_COMPLETED_FILE and os.path.exists(GOAL_COMPLETED_FILE):
@@ -923,8 +981,7 @@ async def handle_server_message(message, player_name, websocket):
         unlocked_explosives = starter_items["explosives"]
         unlocked_misc = starter_items["misc"]
 
-        all_starting = unlocked_healing + unlocked_weapon_upgrades + unlocked_t1_weapons + unlocked_t2_weapons + unlocked_heavy_weapons + unlocked_grenades + unlocked_melee + unlocked_explosives + unlocked_misc
-        log(f"Starting items loaded", "info")
+        log("Starting items loaded", "info")
 
         # Write starting items file for the item remover plugin immediately
         write_starting_items()
@@ -958,6 +1015,9 @@ async def handle_server_message(message, player_name, websocket):
     elif cmd == "RoomUpdate":
         try:
             checked_locations = message.get("checked_locations", [])
+            if checked_locations and not CHECKED_LOCATIONS.issuperset(checked_locations):
+                CHECKED_LOCATIONS.update(checked_locations)
+                update_status(player_name, True)
             new_campaigns = 0
             for loc_id in checked_locations:
                 location_name = get_location_name_from_id(loc_id)
@@ -1000,8 +1060,89 @@ async def handle_server_message(message, player_name, websocket):
     else:
         log(f"Unknown command: {cmd}", "error")
 
+async def process_location_queue(websocket, player_name):
+    """Send the checks queued by the plugin in location_check.txt.
+
+    The plugin appends one "seed|location_id" line per check. To read the queue
+    safely, it is first renamed to location_check.processing.txt (the plugin then
+    starts a new queue). The renamed file is deleted only once the checks are sent,
+    so nothing is lost if the client is closed or the connection drops.
+    Checks tagged with another seed are ignored.
+    """
+    if CURRENT_SEED is None:
+        return  # Not connected to a multiworld yet: keep the queue for later
+
+    for l4d2_path in L4D2_PATHS:
+        mod_data_path = os.path.join(l4d2_path, "left4dead2", "addons", "sourcemod", "data", "archipelago", "mod_data")
+        queue_file = os.path.join(mod_data_path, "location_check.txt")
+        processing_file = os.path.join(mod_data_path, "location_check.processing.txt")
+
+        # A leftover processing file means a previous send failed: retry it first
+        if not os.path.exists(processing_file):
+            if not os.path.exists(queue_file):
+                continue
+            try:
+                os.replace(queue_file, processing_file)
+            except OSError:
+                continue  # The plugin is writing the file right now, retry next loop
+
+        try:
+            with open(processing_file, 'r') as f:
+                lines = [line.strip() for line in f if line.strip()]
+        except OSError as e:
+            log(f"Location check error: {e}", "error")
+            continue
+
+        location_ids = []
+        for line in lines:
+            seed, sep, raw_id = line.partition("|")
+            if not sep or not raw_id.strip().isdigit():
+                log(f"Ignored invalid check line: {line}", "error")
+                continue
+            location_id = int(raw_id)
+            if seed != CURRENT_SEED:
+                location_name = get_location_name_from_id(location_id) or location_id
+                log(f"Ignored check from another seed ({seed}): {location_name}", "error")
+                continue
+            if location_id not in location_ids:
+                location_ids.append(location_id)
+
+        if location_ids:
+            try:
+                await send_packet(websocket, [{"cmd": "LocationChecks", "locations": location_ids}])
+                CHECKED_LOCATIONS.update(location_ids)
+            except Exception as e:
+                log(f"Failed to send checks, will retry: {e}", "error")
+                return  # Keep the processing file for the next attempt
+
+            for location_id in location_ids:
+                location_name = get_location_name_from_id(location_id)
+                if location_name:
+                    log(f"Checked: {location_name}", "info")
+                else:
+                    log(f"Checked location ID: {location_id}", "info")
+
+                # A finale marks its campaign as completed (once), then check the goal
+                if location_name and "Finale" in location_name:
+                    campaign = extract_campaign_from_location_name(location_name)
+                    if campaign and campaign not in completed_campaigns:
+                        completed_campaigns.add(campaign)
+                        log(f"Finale completed: {campaign} ({len(completed_campaigns)}/{goal_campaigns})", "success")
+                    await check_goal_completion(websocket, player_name)
+
+        try:
+            os.remove(processing_file)
+        except OSError as e:
+            log(f"Location check error: {e}", "error")
+
+# The status file is rewritten at least this often while connected. The plugins
+# treat the client as disconnected when "last_updated" gets older than 30 seconds,
+# so a crashed or killed client is detected too.
+STATUS_HEARTBEAT_SECONDS = 10
+
 async def main_loop(websocket, player_name):
     iteration = 0
+    last_heartbeat = 0.0
     while True:
         if stop_event.is_set():
             log("Disconnecting...", "info")
@@ -1033,6 +1174,11 @@ async def main_loop(websocket, player_name):
                 except Exception as e:
                     log(f"Error: {e}", "error")
 
+            # Heartbeat: refresh the status file once connected to a multiworld
+            if CURRENT_SEED is not None and time.time() - last_heartbeat >= STATUS_HEARTBEAT_SECONDS:
+                update_status(player_name, True)
+                last_heartbeat = time.time()
+
             iteration += 1
             if iteration % 1000 == 1:
                 if DEBUG:
@@ -1041,50 +1187,8 @@ async def main_loop(websocket, player_name):
                 if DEBUG:
                     print(f"Heartbeat: Connected=True, Completed Campaigns={len(completed_campaigns)}, Goal Progress={len(completed_campaigns)}/{goal_campaigns}, Goal Completed={goal_completed}")
 
-            # Check for location triggers from mod
-            for l4d2_path in L4D2_PATHS:
-                location_file = os.path.join(l4d2_path, "left4dead2", "addons", "sourcemod", "data", "archipelago", "mod_data", "location_check.txt")
-                if os.path.exists(location_file):
-                    try:
-                        with open(location_file, 'r') as f:
-                            location_id = int(f.read().strip())
-                        os.remove(location_file)
-                        await send_location_check(websocket, location_id)
-
-                        # Check if this is a finale location (contains "Finale" in name)
-                        # If so, mark the campaign completed (once) and check goal
-                        location_name = get_location_name_from_id(location_id)
-                        if location_name and "Finale" in location_name:
-                            campaign = extract_campaign_from_location_name(location_name)
-                            if campaign and campaign not in completed_campaigns:
-                                completed_campaigns.add(campaign)
-                                log(f"Finale completed: {campaign} ({len(completed_campaigns)}/{goal_campaigns})", "success")
-                            await check_goal_completion(websocket, player_name)
-
-                    except Exception as e:
-                        log(f"Location check error: {e}", "error")
-
-            # Also check for manual location checks from debug script
-            debug_location_file = "location_check.txt"
-            if os.path.exists(debug_location_file):
-                try:
-                    with open(debug_location_file, 'r') as f:
-                        location_id = int(f.read().strip())
-                    os.remove(debug_location_file)
-                    await send_location_check(websocket, location_id)
-
-                    # Check if this is a finale location (contains "Finale" in name)
-                    # If so, mark the campaign completed (once) and check goal
-                    location_name = get_location_name_from_id(location_id)
-                    if location_name and "Finale" in location_name:
-                        campaign = extract_campaign_from_location_name(location_name)
-                        if campaign and campaign not in completed_campaigns:
-                            completed_campaigns.add(campaign)
-                            log(f"Finale completed: {campaign} ({len(completed_campaigns)}/{goal_campaigns})", "success")
-                        await check_goal_completion(websocket, player_name)
-
-                except Exception as e:
-                    log(f"Debug location check error: {e}", "error")
+            # Send the checks queued by the plugin
+            await process_location_queue(websocket, player_name)
 
             await asyncio.sleep(0.1)
 
@@ -1125,6 +1229,9 @@ async def connect_to_archipelago(server, slot_name, password=None):
 
     except Exception as e:
         print(f"Connection failed: {e}")
+    finally:
+        # Tell the plugins the client is no longer connected (disconnect or connection lost)
+        mark_status_disconnected()
 
 # ===== ENTRY POINT =====
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 from typing import List, Dict, Any
 from dataclasses import dataclass
-from Options import Choice, OptionGroup, Toggle, Range, PerGameCommonOptions
+from Options import Choice, Toggle, Range, PerGameCommonOptions
 
 class L4D2DeathLink(Toggle):
     """
@@ -48,16 +48,26 @@ class L4D2Goal(Range):
     range_end = 14
     default = 3
 
+class WeaponMode(Choice):
+    """
+    Which weapons are in the game.
+    All Weapons: every weapon can be found, you start with the pistol.
+    Melee Only: no guns, no ammo upgrades, no explosives, no Chainsaw and no Gnome Chompski. You start with a random melee weapon.
+    """
+    display_name = "Weapon Mode"
+    option_all_weapons = 0
+    option_melee_only = 1
+    default = option_all_weapons
+
 @dataclass
 class L4D2Options(PerGameCommonOptions):
     death_link: L4D2DeathLink
     starting_campaign: StartWithCampaign
     all_campaigns_start: AllCampaignsStart
     goal: L4D2Goal
+    weapon_mode: WeaponMode
 
-
-# Organize your options into groups
 l4d2_option_groups: Dict[str, List[Any]] = {
-    "General": [StartWithCampaign, AllCampaignsStart, L4D2DeathLink],
+    "General": [StartWithCampaign, AllCampaignsStart, L4D2DeathLink, WeaponMode],
     "Goal": [L4D2Goal],
 }

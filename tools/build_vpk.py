@@ -1,7 +1,7 @@
-"""Construit dist/l4d2_ap_mod.vpk à partir du dossier addon/l4d2_ap_mod.
+"""Build dist/l4d2_ap_mod.vpk from the addon/l4d2_ap_mod folder.
 
-Nécessite : pip install vpk
-Usage : python tools/build_vpk.py
+Requires: pip install vpk
+Usage: python tools/build_vpk.py
 """
 from pathlib import Path
 
@@ -12,5 +12,7 @@ ADDON_DIR = ROOT / "addon" / "l4d2_ap_mod"
 OUTPUT = ROOT / "dist" / "l4d2_ap_mod.vpk"
 
 OUTPUT.parent.mkdir(exist_ok=True)
-vpk.new(str(ADDON_DIR)).save(str(OUTPUT))
-print(f"Créé : {OUTPUT}")
+pak = vpk.new(str(ADDON_DIR))
+pak.version = 1  # Left 4 Dead 2 only reads VPK version 1 ("Unknown version 2 for vpk")
+pak.save(str(OUTPUT))
+print(f"Created: {OUTPUT}")

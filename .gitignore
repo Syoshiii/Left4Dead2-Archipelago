@@ -1,4 +1,4 @@
-# Sources SourcePawn : repo privé Left4Dead2-Archipelago-Dev cloné ici, jamais publié
+# SourcePawn sources: private repo Left4Dead2-Archipelago-Dev cloned here, never published
 sourcemod/
 *.sp
 
@@ -14,7 +14,7 @@ dist/
 *.smx
 *.exe
 
-# Fichiers générés à l'exécution par le client
+# Files written by the client at runtime
 theme_config.json
 goal_completed_*.txt
 location_check.txt
