@@ -1,7 +1,7 @@
-"""Construit dist/L4D2.apworld à partir du dossier apworld/L4D2.
+"""Build dist/L4D2.apworld from the apworld/L4D2 folder.
 
-Un .apworld est simplement un zip contenant le dossier du monde.
-Usage : python tools/build_apworld.py
+An .apworld is a zip containing the world folder.
+Usage: python tools/build_apworld.py
 """
 import zipfile
 from pathlib import Path
@@ -16,4 +16,4 @@ with zipfile.ZipFile(OUTPUT, "w", zipfile.ZIP_DEFLATED) as archive:
         if path.is_file() and "__pycache__" not in path.parts:
             archive.write(path, path.relative_to(WORLD_DIR.parent))
 
-print(f"Créé : {OUTPUT}")
+print(f"Created: {OUTPUT}")

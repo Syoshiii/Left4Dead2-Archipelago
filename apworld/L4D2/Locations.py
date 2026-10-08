@@ -1,7 +1,4 @@
 from typing import Dict, TYPE_CHECKING
-import logging
-
-# You need to import the BaseClasses.py from Archipelago's core
 from .Types import LocData
 
 if TYPE_CHECKING:

@@ -5,6 +5,6 @@
     "DisplayTitle" "Archipelago"
     "Description" "Randomized chaos awaits!"
     "Image" "maps/any"
-    "Author" "Yufii, NaotoADB, DaftValec"
+    "Author" "Yufii, NaotoADB, DaftValac, Syoshi"
     "Script" "ap_main" // This loads your VScript
 }
