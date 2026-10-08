@@ -9,7 +9,7 @@ import time
 import threading
 import winreg
 import tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox
+from tkinter import ttk, scrolledtext, messagebox, filedialog
 
 DEBUG = False
 stop_event = threading.Event()
@@ -23,19 +23,65 @@ def get_resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
+def find_steam_libraries():
+    # Steam install folder (registry) + every library listed in its libraryfolders.vdf
+    steam_paths = []
+    for hive, subkey, value in [
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath"),
+        (winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam", "SteamPath"),
+    ]:
+        try:
+            with winreg.OpenKey(hive, subkey) as key:
+                steam_paths.append(os.path.normpath(winreg.QueryValueEx(key, value)[0]))
+        except OSError:
+            pass
+
+    libraries = []
+    for steam_path in steam_paths:
+        if steam_path not in libraries:
+            libraries.append(steam_path)
+        vdf = os.path.join(steam_path, "steamapps", "libraryfolders.vdf")
+        try:
+            with open(vdf, encoding="utf-8", errors="ignore") as f:
+                for match in re.finditer(r'"path"\s+"([^"]+)"', f.read()):
+                    library = os.path.normpath(match.group(1).replace("\\\\", "\\"))
+                    if library not in libraries:
+                        libraries.append(library)
+        except OSError:
+            pass
+    return libraries
+
+def ask_l4d2_path():
+    # No console in the .exe: ask for the game folder with a dialog
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        messagebox.showinfo("Left 4 Dead 2 not found",
+                            "Could not find Left 4 Dead 2 automatically.\n"
+                            "Please select the \"Left 4 Dead 2\" game folder.", parent=root)
+        while True:
+            path = filedialog.askdirectory(title="Select the Left 4 Dead 2 folder", parent=root)
+            if not path:
+                messagebox.showerror("Left 4 Dead 2 not found",
+                                     "The client cannot work without the game folder.", parent=root)
+                sys.exit(1)
+            path = os.path.normpath(path)
+            if os.path.isdir(os.path.join(path, "left4dead2")):
+                return path
+            messagebox.showerror("Wrong folder",
+                                 "This folder does not contain \"left4dead2\".\n"
+                                 "Select the \"Left 4 Dead 2\" folder inside steamapps\\common.", parent=root)
+    finally:
+        root.destroy()
+
 def find_all_l4d2_paths():
     # Find all L4D2 installation paths
     found_paths = []
-    
-    try:
-        # Try Steam registry key
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam") as key:
-            steam_path = winreg.QueryValueEx(key, "InstallPath")[0]
-            l4d2_path = os.path.join(steam_path, "steamapps", "common", "Left 4 Dead 2")
-            if os.path.exists(l4d2_path):
-                found_paths.append(l4d2_path)
-    except:
-        pass
+
+    for library in find_steam_libraries():
+        l4d2_path = os.path.join(library, "steamapps", "common", "Left 4 Dead 2")
+        if os.path.exists(l4d2_path) and l4d2_path not in found_paths:
+            found_paths.append(l4d2_path)
     
     # Common installation paths
     common_paths = [
@@ -55,14 +101,7 @@ def find_all_l4d2_paths():
             found_paths.append(path)
     
     if not found_paths:
-        # Ask user if not found
-        print("Could not auto-detect L4D2 installation.")
-        while True:
-            user_path = input("Please enter your L4D2 installation path (e.g., C:\\Program Files (x86)\\Steam\\steamapps\\common\\Left 4 Dead 2): ")
-            if os.path.exists(user_path):
-                found_paths.append(user_path)
-                break
-            print("Path not found. Please try again.")
+        found_paths.append(ask_l4d2_path())
     
     return found_paths
 
