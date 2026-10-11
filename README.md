@@ -6,7 +6,7 @@ This project is a continuation, led by **Syoshi**, of the work of **YufiiEversha
 
 ## Status
 
-Early alpha, in progress. The first milestone is a minimal, stable version: locked campaigns, one check per safe room, an optional melee-only mode, no traps. Targets Archipelago 0.6.8.
+Early alpha, in progress. The first milestone is a minimal, stable version: locked campaigns, one check per safe room, an optional melee-only mode, an optional receive-only DeathLink, no traps. Works with Archipelago 0.6.7 and 0.6.8.
 
 ## Repository contents
 
@@ -16,6 +16,7 @@ Early alpha, in progress. The first milestone is a minimal, stable version: lock
 | `client/` | Companion client bridging the AP server and the game |
 | `addon/l4d2_ap_mod/` | Content of the `.vpk` addon: "Archipelago" mutation, scripts, missions |
 | `tools/` | Build scripts (`.apworld`, `.vpk`, `.smx`) |
+| `examples/` | Player YAML with every option and its default value |
 
 The SourceMod plugins run in game. Their sources are not published in this repository: the compiled `.smx` files are provided with each [release](../../releases).
 
@@ -30,6 +31,7 @@ The client and the plugins communicate through files in `left4dead2/addons/sourc
 - `archipelago_status.json` (client → game): unlocked campaigns and items
 - `archipelago/mod_data/location_check.txt` (game → client): queue of completed locations, one `seed|ID` line each
 - `archipelago/mod_data/starting_items.txt` (client → game): starting equipment (including the melee-only starting weapon)
+- `archipelago/mod_data/deathlink_incoming.txt` (client → game): DeathLink received from another player, one `timestamp|cause` line
 
 ## Build
 
@@ -47,7 +49,8 @@ pyinstaller client/ap_companion.spec   # -> dist/ap_companion.exe
 2. Copy the `.smx` files from the release into `left4dead2/addons/sourcemod/plugins/`.
 3. Copy `l4d2_ap_mod.vpk` into `left4dead2/addons/`.
 4. Copy `L4D2.apworld` into Archipelago's `custom_worlds` folder.
-5. Launch the game with `-insecure`, pick the **Archipelago** mutation, then start the client.
+5. Start from `examples/Left 4 Dead 2.yaml` (also attached to each release) to create your player YAML.
+6. Launch the game with `-insecure`, pick the **Archipelago** mutation, then start the client.
 
 ## Contributing
 

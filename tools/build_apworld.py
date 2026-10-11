@@ -14,7 +14,7 @@ WORLD_DIR = ROOT / "apworld" / "L4D2"
 MANIFEST = WORLD_DIR / "archipelago.json"
 OUTPUT = ROOT / "dist" / "L4D2.apworld"
 
-# Container format of Archipelago 0.6.8 (worlds/Files.py)
+# Container format of Archipelago 0.6.7 and 0.6.8 (worlds/Files.py)
 CONTAINER_VERSION = 7
 
 manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))

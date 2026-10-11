@@ -436,6 +436,9 @@ WEAPON_MODE = "all_weapons"
 # Melee-only: melee weapon that replaces the starting pistol (from slot_data, random per seed)
 STARTING_MELEE = None
 
+# Receive-only DeathLink (death_link option of the YAML, from slot_data)
+DEATHLINK_ENABLED = False
+
 # Item ID to name mapping
 ITEM_ID_TO_NAME = {
     # Campaigns
@@ -605,6 +608,29 @@ def write_item_spawn_command(item_name):
                 f.write(item_name)
         except Exception as e:
             log(f"Failed to write item spawn: {e}", "error")
+
+def clean_deathlink_text(text, max_bytes=200):
+    # Text shown in the game chat: no control characters (line breaks, chat colors), at most
+    # max_bytes in UTF-8 (the plugin buffers are in bytes), never cutting a character in half.
+    text = "".join(char if char.isprintable() else " " for char in str(text)).strip()
+    return text.encode("utf-8")[:max_bytes].decode("utf-8", "ignore").strip()
+
+def write_deathlink_trigger(cause):
+    # Ask the archipelago_deathlink plugin to kill every survivor, on ALL L4D2 installations.
+    # The file is written under a temporary name then renamed, so the plugin never reads half a line.
+    line = f"{int(time.time())}|{cause}\n"
+    for l4d2_path in L4D2_PATHS:
+        mod_data_path = os.path.join(l4d2_path, "left4dead2", "addons", "sourcemod", "data", "archipelago", "mod_data")
+        trigger_file = os.path.join(mod_data_path, "deathlink_incoming.txt")
+        temp_file = trigger_file + ".tmp"
+
+        try:
+            os.makedirs(mod_data_path, exist_ok=True)
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                f.write(line)
+            os.replace(temp_file, trigger_file)
+        except Exception as e:
+            log(f"Failed to write DeathLink: {e}", "error")
 
 # Hardcoded location table for finale detection (avoids import issues)
 location_table = {
@@ -977,6 +1003,12 @@ async def handle_server_message(message, player_name, websocket):
 
         log(f"Goal: Complete {goal_campaigns} campaign(s)", "info")
 
+        # Receive-only DeathLink: the "DeathLink" tag is added with a ConnectUpdate (sent with
+        # the Sync below) only if the YAML enables it, so the server never sends it otherwise.
+        global DEATHLINK_ENABLED
+        DEATHLINK_ENABLED = bool(options.get("L4D2DeathLink", False))
+        log(f"DeathLink: {'enabled (receive-only)' if DEATHLINK_ENABLED else 'disabled'}", "info")
+
         # Map option numbers to campaign names
         campaign_map = {
             1: "Dead Center",
@@ -1046,7 +1078,10 @@ async def handle_server_message(message, player_name, websocket):
             print(f"Failed to seed completed campaigns from checked_locations: {e}")
 
         # Request sync of existing items - use array format
-        return [{"cmd": "Sync"}]
+        response = [{"cmd": "Sync"}]
+        if DEATHLINK_ENABLED:
+            response.append({"cmd": "ConnectUpdate", "tags": ["AP", "DeathLink"]})
+        return response
         
     elif cmd == "RoomInfo":
         log("Received room info", "info")
@@ -1090,6 +1125,15 @@ async def handle_server_message(message, player_name, websocket):
 
     elif cmd == "ConnectionRefused":
         log(f"Connection refused: {message.get('text', 'Unknown reason')}", "error")
+
+    elif cmd == "Bounced":
+        # DeathLink from another player of the multiworld (our own deaths are never sent)
+        if DEATHLINK_ENABLED and "DeathLink" in message.get("tags", []):
+            data = message.get("data", {})
+            source = clean_deathlink_text(data.get("source", "")) or "Someone"
+            cause = clean_deathlink_text(data.get("cause", "")) or f"{source} died"
+            log(f"DeathLink received: {cause}", "error")
+            write_deathlink_trigger(cause)
     
     elif cmd == "PrintJSON":
         # Suppress PrintJSON messages - actual item receives are logged via ReceivedItems
