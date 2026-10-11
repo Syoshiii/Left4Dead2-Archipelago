@@ -4,8 +4,9 @@ from Options import Choice, Toggle, Range, PerGameCommonOptions
 
 class L4D2DeathLink(Toggle):
     """
-    If enabled, when a player in the multiworld dies, everyone else dies.
-    A Left 4 Dead 2-style team wipe.
+    Receive-only DeathLink.
+    If enabled, when another player in the multiworld dies, every survivor of your team dies (bots included).
+    Your own deaths are not sent to the other players.
     """
     display_name = "DeathLink"
     default = False
